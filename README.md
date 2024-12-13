@@ -1,6 +1,6 @@
 # PDF Analyzer for Tanzu Platform for Cloud Foundry - Powered by Spring AI
 
-![PDF Analyzer](screenshot.png)
+![PDF Analyzer](screenshot.jpg)
 
 This is a simple Spring Boot application that takes an lets you upload a PDF document and ask questions about it using your choise of an embedding model and an LLM.
 
