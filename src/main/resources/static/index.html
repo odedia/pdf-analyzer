@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Analyzer with Chat</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@3.0.0/lib/marked.min.js"></script>
+
+    <script>
+        // Handle file selection
+        function handleFileSelection() {
+            const fileInput = document.getElementById('sourceFile');
+            const sendButton = document.getElementById('sendButton');
+            const chatInput = document.getElementById('chatInput');
+
+            if (fileInput.files.length > 0) {
+                sendButton.disabled = false;
+                chatInput.disabled = false;
+            } else {
+                sendButton.disabled = true;
+                chatInput.disabled = true;
+            }
+        }
+
+        function uploadPDF(event) {
+            event.preventDefault();
+
+            const sourceFileInput = document.getElementById("sourceFile");
+            const progressContainer = document.getElementById("progressContainer");
+            const progressBar = document.getElementById("progressBar");
+            const uploadButton = document.getElementById("uploadButton");
+            const successDiv = document.getElementById("success");
+            const errorDiv = document.getElementById("error");
+
+            const sourceFile = sourceFileInput.files[0];
+            if (!sourceFile) {
+                errorDiv.textContent = "Please select a PDF file.";
+                errorDiv.style.display = "block";
+                return;
+            }
+
+            errorDiv.style.display = "none";
+            successDiv.classList.add("hidden");
+
+            // Show progress container
+            progressContainer.classList.remove("hidden");
+
+            // Disable upload button during upload
+            uploadButton.disabled = true;
+
+            const formData = new FormData();
+            formData.append("file", sourceFile);
+
+            fetch('/pdf/analyze', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to analyze PDF');
+                }
+                return new Promise(resolve => {
+                    // Simulate progress bar animation
+                    let progress = 0;
+                    const interval = setInterval(() => {
+                        progress += 10;
+                        progressBar.style.width = `${progress}%`;
+                        if (progress >= 100) {
+                            clearInterval(interval);
+                            resolve(response.json());
+                        }
+                    }, 100);
+                });
+            })
+            .then(data => {
+                // Update success message with the result
+                successDiv.textContent = `PDF successfully uploaded! ${data.result}`;
+                successDiv.classList.remove("hidden");
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                errorDiv.textContent = "An error occurred while uploading the file.";
+                errorDiv.style.display = "block";
+            })
+            .finally(() => {
+                // Reset UI
+                uploadButton.disabled = false;
+                progressContainer.classList.add("hidden");
+                progressBar.style.width = "0%";
+            });
+        }
+
+		function handleChatSubmit(event) {
+		    event.preventDefault();
+
+		    const chatInput = document.getElementById("chatInput");
+		    const chatMessages = document.getElementById("chatMessages");
+		    const question = chatInput.value.trim();
+
+		    if (!question) return;
+
+		    // Display user message
+		    const userMessage = document.createElement("div");
+		    userMessage.className = "chat-message user bg-indigo-500 text-white p-4 rounded-lg mb-3 self-end max-w-lg";
+		    userMessage.textContent = question;
+		    chatMessages.appendChild(userMessage);
+		    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+		    // Clear input field
+		    chatInput.value = "";
+
+		    // Send question to backend
+		    fetch("/pdf/query", {
+		        method: "POST",
+		        headers: { "Content-Type": "text/plain" },
+		        body: question
+		    })
+		    .then(response => {
+		        if (!response.ok) {
+		            throw new Error("Failed to process question");
+		        }
+		        return response.body.getReader();
+		    })
+		    .then(reader => {
+		        const decoder = new TextDecoder();
+		        let responseMessage = document.createElement("div");
+		        responseMessage.className = "chat-message response bg-gray-200 text-black p-4 rounded-lg mb-3 self-start max-w-lg";
+		        chatMessages.appendChild(responseMessage);
+
+		        let partialChunk = "";  // Store incomplete data between chunks
+
+		        function read() {
+		            reader.read().then(({ done, value }) => {
+		                if (done) {
+		                    if (partialChunk) {
+		                        responseMessage.innerHTML += marked.parse(partialChunk);  // Handle any remaining data
+		                    }
+		                    chatMessages.scrollTop = chatMessages.scrollHeight;
+		                    return;
+		                }
+
+		                const chunk = decoder.decode(value, { stream: true });
+		                partialChunk += chunk;
+
+		                // Attempt to parse only complete lines or sentences
+		                const lines = partialChunk.split('\n');
+		                partialChunk = lines.pop();  // Save any incomplete part
+
+		                lines.forEach(line => {
+		                    if (line.trim()) {
+		                        responseMessage.innerHTML += marked.parse(line);
+		                    }
+		                });
+
+		                chatMessages.scrollTop = chatMessages.scrollHeight;
+		                read();  // Continue reading
+		            }).catch(error => {
+		                console.error("Streaming error:", error);
+		                responseMessage.textContent = "An error occurred while processing the response.";
+		            });
+		        }
+
+		        read();  // Start reading the stream
+		    })
+		    .catch(error => {
+		        console.error("Error:", error);
+		        const errorMessage = document.createElement("div");
+		        errorMessage.className = "chat-message response bg-gray-200 text-black p-4 rounded-lg mb-3 self-start max-w-lg";
+		        errorMessage.textContent = "An error occurred while processing your question.";
+		        chatMessages.appendChild(errorMessage);
+		        chatMessages.scrollTop = chatMessages.scrollHeight;
+		    });
+		}
+
+    </script>
+</head>
+<body class="bg-gradient-to-r from-blue-50 via-purple-50 to-indigo-50 h-screen flex flex-col overflow-hidden">
+    <!-- PDF Upload Section -->
+    <div class="container mx-auto max-w-2xl bg-white p-8 rounded-2xl shadow-xl flex-shrink-0">
+        <h1 class="text-4xl font-semibold text-center text-indigo-600 mb-6">PDF Analyzer</h1>
+        <form onsubmit="uploadPDF(event)" class="mb-6 relative">
+            <div class="mb-4">
+                <label for="sourceFile" class="block text-lg font-medium text-gray-700">Select PDF File:</label>
+                <input 
+                    type="file" 
+                    class="mt-2 block w-full px-6 py-3 border rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" 
+                    id="sourceFile" 
+                    name="sourceFile" 
+                    onchange="handleFileSelection()"
+                    required>
+            </div>
+            <div class="hidden" id="progressContainer">
+                <div class="relative pt-1">
+                    <div class="overflow-hidden h-2 mb-4 text-xs flex rounded bg-indigo-200">
+                        <div style="width: 0%;" 
+                             id="progressBar" 
+                             class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button 
+                type="submit" 
+                id="uploadButton" 
+                class="w-full bg-indigo-600 text-white p-3 rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500">
+                Upload PDF
+            </button>
+            <div id="error" class="error text-red-500 mt-2" style="display: none;"></div>
+            <div id="success" class="text-green-500 mt-2 hidden">PDF successfully uploaded!</div>
+        </form>
+    </div>
+
+    <!-- Chat Section -->
+    <div class="container mx-auto max-w-2xl bg-white rounded-2xl shadow-xl flex flex-col flex-grow overflow-hidden">
+        <!-- Chat Messages (Scrollable) -->
+        <div 
+            id="chatMessages" 
+            class="flex-grow overflow-y-auto p-4 bg-gray-50 border border-gray-300 rounded-lg shadow-sm">
+        </div>
+        
+        <!-- Chat Input -->
+        <form class="flex items-center p-4 border-t border-gray-300 flex-shrink-0" onsubmit="handleChatSubmit(event)">
+            <input 
+                type="text" 
+                id="chatInput" 
+                class="flex-grow p-4 border rounded-lg mr-4 text-lg focus:ring-2 focus:ring-indigo-500" 
+                placeholder="Ask me anything..." 
+                disabled>
+            <button 
+                type="submit" 
+                id="sendButton" 
+                class="bg-indigo-600 text-white p-4 rounded-lg hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500" 
+                disabled>
+                Send
+            </button>
+        </form>
+    </div>
+
+</body>
+</html>

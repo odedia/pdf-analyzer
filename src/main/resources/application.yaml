@@ -1,0 +1,27 @@
+spring:
+  config:
+    import: "optional:classpath:/creds.yaml"
+  application:
+    name: pdf-analyzer
+  datasource:
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost/postgres}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASS:password}
+  sql:
+    init:
+      mode: always
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+logging:
+  level:
+    org:
+      apache:
+        pdfbox:
+          pgmodel:
+            font:
+              FileSystemFontProvider: ERROR
